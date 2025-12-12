@@ -1,45 +1,158 @@
 use libc::{ECHO, ICANON, TCSANOW, tcgetattr, tcsetattr, termios};
+use raylib::color::Color;
+use raylib::prelude::*;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{self, BufRead, BufReader, Read, Write, stdin};
 use std::os::unix::io::AsRawFd;
 
-fn main() {
-    loop {
-        let mut response = String::new();
-        match get_input(
-            r#"Welcome to Cruz Password Manager
-press 1 to create an account
-press 2 to login to an account
-press q to quit
-"#,
-            &mut response,
-        ) {
-            Ok(_) => (),
-            Err(e) => println!("Could not get input due to: {}", e),
-        }
+const WINDOW_HEIGHT: i32 = 480;
+const WINDOW_WIDTH: i32 = 640;
+enum Screens {
+    MainScreen,
+    SignupScreen,
+    LoginScreen,
+    UserSession,
+}
 
-        let mut key = String::new();
-        let mut user_name = String::new();
-        if response == "1" {
-            match signup(&mut key) {
-                Err(e) => println!("Couldn't signup: {}", e),
-                _ => (),
+fn main() {
+    let (mut rl, rl_thread) = raylib::init()
+        .msaa_4x()
+        .size(WINDOW_WIDTH, WINDOW_HEIGHT)
+        .title("Password Manager")
+        .build();
+    let mut current_screen = Screens::MainScreen;
+    let mut quit = false;
+    while !rl.window_should_close() && !quit {
+        match current_screen {
+            Screens::MainScreen => {
+                update_main_screen(&mut rl, &rl_thread, &mut current_screen, &mut quit)
             }
-        } else if response == "2" {
-            let login_sesh = login(&mut key, &mut user_name);
-            match login_sesh {
-                Ok(_) => user_session(&key, &user_name),
-                Err(e) => println!("{}", e),
+            Screens::SignupScreen => update_signup_screen(&mut rl, &rl_thread),
+            Screens::LoginScreen => update_login_screen(),
+            Screens::UserSession => update_usersession_screen(),
+        }
+        // let mut response = String::new();
+        //         match get_input(
+        //             r#"Welcome to Cruz Password Manager
+        // press 1 to create an account
+        // press 2 to login to an account
+        // press q to quit
+        // "#,
+        //             &mut response,
+        //         ) {
+        //             Ok(_) => (),
+        //             Err(e) => println!("Could not get input due to: {}", e),
+        //         }
+        //
+        //         let mut key = String::new();
+        //         let mut user_name = String::new();
+        //         if response == "1" {
+        //             match signup(&mut key) {
+        //                 Err(e) => println!("Couldn't signup: {}", e),
+        //                 _ => (),
+        //             }
+        //         } else if response == "2" {
+        //             let login_sesh = login(&mut key, &mut user_name);
+        //             match login_sesh {
+        //                 Ok(_) => user_session(&key, &user_name),
+        //                 Err(e) => println!("{}", e),
+        //             }
+        //         } else if response.to_lowercase() == "q" {
+        //             println!("Thanks for using the Password Manager");
+        //             break;
+        //         } else {
+        //             println!("{response} is not an option");
+        //         }
+    }
+}
+
+fn draw_main_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec<&str>) {
+    let roundness = 5.0;
+    let segments = 12;
+    let color = Color::BLACK;
+
+    d.clear_background(Color::ORANGERED);
+    for i in 0..buttons.len() {
+        d.draw_rectangle_rounded(buttons[i], roundness, segments, color);
+        d.draw_text(
+            text[i],
+            buttons[i].x as i32 + buttons[i].width as i32 / 10,
+            buttons[i].y as i32 + buttons[i].height as i32 / 2,
+            24,
+            Color::RAYWHITE,
+        );
+    }
+}
+
+fn draw_signup_screen(d: &mut RaylibDrawHandle) {
+    d.clear_background(Color::BLUE);
+    ()
+}
+fn draw_login_screen() {
+    ()
+}
+fn draw_usersession_screen() {
+    ()
+}
+
+fn update_main_screen(
+    rl: &mut RaylibHandle,
+    rl_thread: &RaylibThread,
+    current_screen: &mut Screens,
+    quit: &mut bool,
+) {
+    let w = rl.get_render_width();
+    let h = rl.get_render_height();
+    let mut buttons: Vec<Rectangle> = vec![];
+    let text = vec!["Sign Up", "Login", "Quit"];
+    let buttons_width = 2.0;
+    let buttons_height = 1.0;
+
+    let no_of_buttons = 3;
+
+    for _i in 0..no_of_buttons {
+        buttons.push(Rectangle::new(
+            0.0,
+            0.0,
+            (buttons_width * h as f32 / no_of_buttons as f32) * (1.0 - 0.2),
+            (buttons_height * h as f32 / no_of_buttons as f32) * (1.0 - 0.4),
+        ));
+    }
+
+    for i in 0..buttons.len() {
+        buttons[i].x = w as f32 / 2.0 - buttons[i].width / 2.0;
+        buttons[i].y = (h as f32 / buttons.len() as f32) * i as f32 + buttons[i].height / 2.0;
+    }
+
+    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+        for i in 0..buttons.len() {
+            if buttons[i].check_collision_point_rec(rl.get_mouse_position()) {
+                match i {
+                    0 => *current_screen = Screens::SignupScreen,
+                    1 => *current_screen = Screens::LoginScreen,
+                    _ => *quit = true,
+                }
+                println!("Button {i} was clicked");
             }
-        } else if response.to_lowercase() == "q" {
-            println!("Thanks for using the Password Manager");
-            break;
-        } else {
-            println!("{response} is not an option");
         }
     }
+
+    let mut d = rl.begin_drawing(rl_thread);
+    draw_main_screen(&mut d, buttons, text);
+}
+
+fn update_signup_screen(rl: &mut RaylibHandle, rl_thread: &RaylibThread) {
+    let mut d = rl.begin_drawing(rl_thread);
+    draw_signup_screen(&mut d);
+    ()
+}
+fn update_login_screen() {
+    ()
+}
+fn update_usersession_screen() {
+    ()
 }
 
 fn signup(key: &mut String) -> Result<String, Box<dyn Error>> {
