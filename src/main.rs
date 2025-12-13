@@ -16,20 +16,31 @@ enum Screens {
     UserSession,
 }
 
+struct State {
+    rl: RaylibHandle,
+    rl_thread: RaylibThread,
+    input: String,
+    current_screen: Screens,
+}
+
 fn main() {
-    let (mut rl, rl_thread) = raylib::init()
+    let (rl, rl_thread) = raylib::init()
         .msaa_4x()
         .size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .title("Password Manager")
         .build();
-    let mut current_screen = Screens::MainScreen;
+    let current_screen = Screens::MainScreen;
     let mut quit = false;
-    while !rl.window_should_close() && !quit {
-        match current_screen {
-            Screens::MainScreen => {
-                update_main_screen(&mut rl, &rl_thread, &mut current_screen, &mut quit)
-            }
-            Screens::SignupScreen => update_signup_screen(&mut rl, &rl_thread),
+    let mut state = State {
+        rl: rl,
+        rl_thread: rl_thread,
+        input: String::new(),
+        current_screen: current_screen,
+    };
+    while !state.rl.window_should_close() && !quit {
+        match state.current_screen {
+            Screens::MainScreen => update_main_screen(&mut state, &mut quit),
+            Screens::SignupScreen => update_signup_screen(&mut state),
             Screens::LoginScreen => update_login_screen(),
             Screens::UserSession => update_usersession_screen(),
         }
@@ -86,8 +97,24 @@ fn draw_main_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec
     }
 }
 
-fn draw_signup_screen(d: &mut RaylibDrawHandle) {
+fn draw_signup_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec<String>) {
+    let roundness = 5.0;
+    let segments = 12;
+    let color = Color::BLACK;
+
     d.clear_background(Color::BLUE);
+    for i in 0..buttons.len() {
+        d.draw_rectangle_rounded(buttons[i], roundness, segments, color);
+        if i < text.len() {
+            d.draw_text(
+                text[i].as_str(),
+                buttons[i].x as i32 + buttons[i].width as i32 / 10,
+                buttons[i].y as i32 + buttons[i].height as i32 / 2,
+                24,
+                Color::RAYWHITE,
+            );
+        }
+    }
     ()
 }
 fn draw_login_screen() {
@@ -97,14 +124,9 @@ fn draw_usersession_screen() {
     ()
 }
 
-fn update_main_screen(
-    rl: &mut RaylibHandle,
-    rl_thread: &RaylibThread,
-    current_screen: &mut Screens,
-    quit: &mut bool,
-) {
-    let w = rl.get_render_width();
-    let h = rl.get_render_height();
+fn update_main_screen(state: &mut State, quit: &mut bool) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
     let mut buttons: Vec<Rectangle> = vec![];
     let text = vec!["Sign Up", "Login", "Quit"];
     let buttons_width = 2.0;
@@ -126,12 +148,15 @@ fn update_main_screen(
         buttons[i].y = (h as f32 / buttons.len() as f32) * i as f32 + buttons[i].height / 2.0;
     }
 
-    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+    if state
+        .rl
+        .is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
+    {
         for i in 0..buttons.len() {
-            if buttons[i].check_collision_point_rec(rl.get_mouse_position()) {
+            if buttons[i].check_collision_point_rec(state.rl.get_mouse_position()) {
                 match i {
-                    0 => *current_screen = Screens::SignupScreen,
-                    1 => *current_screen = Screens::LoginScreen,
+                    0 => state.current_screen = Screens::SignupScreen,
+                    1 => state.current_screen = Screens::LoginScreen,
                     _ => *quit = true,
                 }
                 println!("Button {i} was clicked");
@@ -139,13 +164,58 @@ fn update_main_screen(
         }
     }
 
-    let mut d = rl.begin_drawing(rl_thread);
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
     draw_main_screen(&mut d, buttons, text);
 }
 
-fn update_signup_screen(rl: &mut RaylibHandle, rl_thread: &RaylibThread) {
-    let mut d = rl.begin_drawing(rl_thread);
-    draw_signup_screen(&mut d);
+fn update_signup_screen(state: &mut State) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
+    let mut buttons: Vec<Rectangle> = vec![];
+    let mut text: Vec<String> = state.input.lines().map(|x| x.to_string()).collect();
+    if text.len() > 3 {
+        text.pop();
+    }
+    let mut current_field = 0;
+    let buttons_width = 2.0;
+    let buttons_height = 1.0;
+
+    let no_of_buttons = 3;
+
+    for _i in 0..no_of_buttons {
+        buttons.push(Rectangle::new(
+            0.0,
+            0.0,
+            (buttons_width * h as f32 / no_of_buttons as f32) * (1.0 - 0.2),
+            (buttons_height * h as f32 / no_of_buttons as f32) * (1.0 - 0.4),
+        ));
+    }
+
+    for i in 0..buttons.len() {
+        buttons[i].x = w as f32 / 2.0 - buttons[i].width / 2.0;
+        buttons[i].y = (h as f32 / buttons.len() as f32) * i as f32 + buttons[i].height / 2.0;
+    }
+
+    while let Some(key) = state.rl.get_char_pressed() {
+        if key as u8 >= 32 && key as u8 <= 125 {
+            state.input.push(key);
+        }
+    }
+
+    if state.rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
+        state.input.pop();
+    }
+
+    if state.rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
+        state.input.push('\n');
+        if current_field < 2 {
+            current_field += 1;
+        } else {
+            state.current_screen = Screens::LoginScreen;
+        }
+    }
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
+    draw_signup_screen(&mut d, buttons, text);
     ()
 }
 fn update_login_screen() {
