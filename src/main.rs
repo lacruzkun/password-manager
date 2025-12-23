@@ -12,7 +12,11 @@ const WINDOW_WIDTH: i32 = 640;
 enum Screens {
     MainScreen,
     SignupScreen,
+    AccountCreatedScreen,
     LoginScreen,
+    RetrievePassword,
+    AddPassword,
+    WelcomeScreen,
     UserSession,
 }
 
@@ -21,6 +25,8 @@ struct State {
     rl_thread: RaylibThread,
     input: String,
     current_screen: Screens,
+    current_user: Option<String>,
+    current_key: Option<String>,
 }
 
 fn main() {
@@ -36,13 +42,19 @@ fn main() {
         rl_thread: rl_thread,
         input: String::new(),
         current_screen: current_screen,
+        current_user: None,
+        current_key: None,
     };
     while !state.rl.window_should_close() && !quit {
         match state.current_screen {
             Screens::MainScreen => update_main_screen(&mut state, &mut quit),
             Screens::SignupScreen => update_signup_screen(&mut state),
-            Screens::LoginScreen => update_login_screen(),
-            Screens::UserSession => update_usersession_screen(),
+            Screens::AccountCreatedScreen => update_account_created_screen(&mut state),
+            Screens::LoginScreen => update_login_screen(&mut state),
+            Screens::UserSession => update_usersession_screen(&mut state),
+            Screens::WelcomeScreen => update_welcome_screen(&mut state),
+            Screens::RetrievePassword => update_retrieve_password(&mut state),
+            Screens::AddPassword => update_add_password(&mut state),
         }
         // let mut response = String::new();
         //         match get_input(
@@ -96,6 +108,25 @@ fn draw_main_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec
         );
     }
 }
+fn draw_update_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec<String>) {
+    let roundness = 5.0;
+    let segments = 12;
+    let color = Color::BLACK;
+
+    d.clear_background(Color::BLUE);
+    for i in 0..buttons.len() {
+        d.draw_rectangle_rounded(buttons[i], roundness, segments, color);
+        if i < text.len() {
+            d.draw_text(
+                text[i].as_str(),
+                buttons[i].x as i32 + buttons[i].width as i32 / 10,
+                buttons[i].y as i32 + buttons[i].height as i32 / 2,
+                24,
+                Color::RAYWHITE,
+            );
+        }
+    }
+}
 
 fn draw_signup_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: Vec<String>) {
     let roundness = 5.0;
@@ -115,7 +146,6 @@ fn draw_signup_screen(d: &mut RaylibDrawHandle, buttons: Vec<Rectangle>, text: V
             );
         }
     }
-    ()
 }
 fn draw_login_screen() {
     ()
@@ -172,11 +202,7 @@ fn update_signup_screen(state: &mut State) {
     let w = state.rl.get_render_width();
     let h = state.rl.get_render_height();
     let mut buttons: Vec<Rectangle> = vec![];
-    let mut text: Vec<String> = state.input.lines().map(|x| x.to_string()).collect();
-    if text.len() > 3 {
-        text.pop();
-    }
-    let mut current_field = 0;
+    let text: Vec<String> = state.input.lines().map(|x| x.to_string()).collect();
     let buttons_width = 2.0;
     let buttons_height = 1.0;
 
@@ -203,37 +229,183 @@ fn update_signup_screen(state: &mut State) {
     }
 
     if state.rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
-        state.input.pop();
+        match state.input.pop() {
+            Some('\n') => state.input.push('\n'),
+            _ => (),
+        }
     }
 
     if state.rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
         state.input.push('\n');
-        if current_field < 2 {
-            current_field += 1;
-        } else {
-            state.current_screen = Screens::LoginScreen;
+        if text.len() >= no_of_buttons {
+            state.input.clear();
+            match signup(&text) {
+                Err(e) => println!("Couldn't signup: {}", e),
+                Ok(key) => {
+                    state.current_key = Some(key);
+                    state.current_screen = Screens::AccountCreatedScreen;
+                }
+            }
         }
     }
     let mut d = state.rl.begin_drawing(&state.rl_thread);
     draw_signup_screen(&mut d, buttons, text);
-    ()
 }
-fn update_login_screen() {
-    ()
+
+fn update_account_created_screen(state: &mut State) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
+    if let Some(_) = state.rl.get_key_pressed() {
+        state.current_screen = Screens::MainScreen;
+    }
+    let text = "Account Created Press Any key to login";
+    let text_offset = state.rl.measure_text(text, 24);
+
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
+
+    d.clear_background(Color::BLACK);
+
+    d.draw_text(text, w / 2 - text_offset / 2, h / 2, 24, Color::RAYWHITE);
 }
-fn update_usersession_screen() {
+
+fn update_welcome_screen(state: &mut State) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
+    if let Some(_) = state.rl.get_key_pressed() {
+        state.current_screen = Screens::UserSession;
+    }
+    let username = state.current_user.clone();
+    let username = username.expect("Should not be none by this point");
+    let text = format!("Welcome back {}", username);
+    let text = text.as_str();
+    let text_offset = state.rl.measure_text(text, 24);
+
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
+
+    d.clear_background(Color::BLACK);
+
+    d.draw_text(text, w / 2 - text_offset / 2, h / 2, 24, Color::RAYWHITE);
+}
+
+fn update_login_screen(state: &mut State) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
+    let mut buttons: Vec<Rectangle> = vec![];
+    let mut text: Vec<String> = state.input.lines().map(|x| x.to_string()).collect();
+    let buttons_width = 2.0;
+    let buttons_height = 1.0;
+
+    let no_of_buttons = 2;
+
+    for _i in 0..no_of_buttons {
+        buttons.push(Rectangle::new(
+            0.0,
+            0.0,
+            (buttons_width * h as f32 / no_of_buttons as f32) * (1.0 - 0.2),
+            (buttons_height * h as f32 / no_of_buttons as f32) * (1.0 - 0.4),
+        ));
+    }
+
+    for i in 0..buttons.len() {
+        buttons[i].x = w as f32 / 2.0 - buttons[i].width / 2.0;
+        buttons[i].y = (h as f32 / buttons.len() as f32) * i as f32 + buttons[i].height / 2.0;
+    }
+
+    while let Some(key) = state.rl.get_char_pressed() {
+        if key as u8 >= 32 && key as u8 <= 125 {
+            state.input.push(key);
+        }
+    }
+
+    if state.rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
+        match state.input.pop() {
+            Some('\n') => state.input.push('\n'),
+            _ => (),
+        }
+    }
+
+    if state.rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
+        state.input.push('\n');
+        if text.len() >= no_of_buttons {
+            state.input.clear();
+            let login_sesh = login(state, &mut text);
+            match login_sesh {
+                Ok((username, key)) => {
+                    // user_session(&key, &username);
+                    state.current_user = Some(username);
+                    state.current_key = Some(key);
+                    state.current_screen = Screens::WelcomeScreen;
+                }
+                Err(e) => println!("{}", e),
+            }
+        }
+    }
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
+    draw_update_screen(&mut d, buttons, text);
+}
+
+fn update_usersession_screen(state: &mut State) {
+    let w = state.rl.get_render_width();
+    let h = state.rl.get_render_height();
+    let mut buttons: Vec<Rectangle> = vec![];
+    let text = vec!["Add password", "Retrieve Password", "Back"];
+    let buttons_width = 2.0;
+    let buttons_height = 1.0;
+
+    let no_of_buttons = 3;
+
+    for _i in 0..no_of_buttons {
+        buttons.push(Rectangle::new(
+            0.0,
+            0.0,
+            (buttons_width * h as f32 / no_of_buttons as f32) * (1.0 - 0.2),
+            (buttons_height * h as f32 / no_of_buttons as f32) * (1.0 - 0.4),
+        ));
+    }
+
+    for i in 0..buttons.len() {
+        buttons[i].x = w as f32 / 2.0 - buttons[i].width / 2.0;
+        buttons[i].y = (h as f32 / buttons.len() as f32) * i as f32 + buttons[i].height / 2.0;
+    }
+
+    if state
+        .rl
+        .is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
+    {
+        for i in 0..buttons.len() {
+            if buttons[i].check_collision_point_rec(state.rl.get_mouse_position()) {
+                match i {
+                    0 => state.current_screen = Screens::AddPassword,
+                    1 => state.current_screen = Screens::RetrievePassword,
+                    _ => state.current_screen = Screens::MainScreen,
+                }
+                println!("Button {i} was clicked");
+            }
+        }
+    }
+
+    let mut d = state.rl.begin_drawing(&state.rl_thread);
+    draw_main_screen(&mut d, buttons, text);
+}
+
+fn update_retrieve_password(state: &mut State) {
     ()
 }
 
-fn signup(key: &mut String) -> Result<String, Box<dyn Error>> {
-    let mut username = String::new();
-    get_input("Input your username", &mut username)?;
+fn update_add_password(state: &mut State) {
+    ()
+}
 
-    let mut password = String::new();
+fn signup(input: &Vec<String>) -> Result<String, Box<dyn Error>> {
+    let mut key = String::new();
+    let username = input[0].clone();
+
+    let mut password = input[1].clone();
     let mut password_hasher = DefaultHasher::new();
-    get_masked_input("Please input a password", &mut password)?;
+    // get_input("Input your username", &mut username)?;
+    // get_masked_input("Please input a password", &mut password)?;
 
-    get_symmetric_key(key, &password);
+    get_symmetric_key(&mut key, &password);
     password.hash(&mut password_hasher);
     password = password_hasher.finish().to_string();
     println!("\nMaster account {username} created");
@@ -247,20 +419,21 @@ fn signup(key: &mut String) -> Result<String, Box<dyn Error>> {
         .create(true)
         .open(database)?;
     file.write_all(user.as_bytes())?;
-    Ok(key.to_string())
+    Ok(key)
 }
 
 fn login<'a>(
-    key: &'a mut String,
-    user_name: &mut String,
-) -> Result<&'a mut String, Box<dyn Error>> {
-    let mut username = String::new();
-    let mut password = String::new();
+    state: &mut State,
+    input: &mut Vec<String>,
+) -> Result<(String, String), Box<dyn Error>> {
+    let mut key = String::new();
+    let username = input[0].clone();
+    let mut password = input[1].clone();
 
-    get_input("Input your username", &mut username)?;
-    get_masked_input("Input your password", &mut password)?;
+    // get_input("Input your username", &mut username)?;
+    // get_masked_input("Input your password", &mut password)?;
 
-    get_symmetric_key(key, &password);
+    get_symmetric_key(&mut key, &password);
     let mut password_hasher = DefaultHasher::new();
     password.hash(&mut password_hasher);
     password = password_hasher.finish().to_string();
@@ -272,9 +445,8 @@ fn login<'a>(
         let line = line?;
         let u: Vec<_> = line.split(" ").collect();
         if username == u[0] && password == u[1] {
-            *user_name = username.clone();
-            println!("\nWelcome back {username}");
-            return Ok(key);
+            // *user_name = username.clone();
+            return Ok((username, key));
         }
     }
 
