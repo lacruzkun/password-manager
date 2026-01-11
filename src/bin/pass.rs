@@ -92,7 +92,62 @@ impl SimpleComponent for SignupScreen {
     type Input = ();
     type Output = AppMsg;
 
-    view!(gtk::CenterBox {});
+    view!(gtk::CenterBox {
+        #[wrap(Some)]
+        set_center_widget =  &gtk::CenterBox {
+            set_orientation: gtk::Orientation::Vertical,
+
+            #[wrap(Some)]
+            set_center_widget = &gtk::Box{
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 20,
+
+                gtk::Box{
+                    set_orientation: gtk::Orientation::Vertical,
+                    gtk::Label {
+                        set_label: "UserName"
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+
+                gtk::Box{
+                    set_orientation: gtk::Orientation::Vertical,
+                    gtk::Label {
+                        set_label: "Password"
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+
+                gtk::Box{
+                    set_orientation: gtk::Orientation::Vertical,
+                    gtk::Label {
+                        set_label: "Confirm password"
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+            },
+        },
+
+        #[wrap(Some)]
+        set_end_widget = &gtk::CenterBox{
+            set_margin_all: 50,
+            set_orientation: gtk::Orientation::Vertical,
+
+            #[wrap(Some)]
+            set_end_widget = &gtk::Button{
+                set_label: "OK",
+            },
+        },
+    });
 
     fn init(
         _init: Self::Init,
@@ -113,7 +168,51 @@ impl SimpleComponent for LoginScreen {
     type Input = ();
     type Output = AppMsg;
 
-    view!(gtk::CenterBox {});
+    view!(gtk::CenterBox {
+        #[wrap(Some)]
+        set_center_widget =  &gtk::CenterBox {
+            set_orientation: gtk::Orientation::Vertical,
+
+            #[wrap(Some)]
+            set_center_widget = &gtk::Box{
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 20,
+
+                gtk::Box{
+                    set_orientation: gtk::Orientation::Vertical,
+                    gtk::Label {
+                        set_label: "User name"
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+
+                gtk::Box{
+                    set_orientation: gtk::Orientation::Vertical,
+                    gtk::Label {
+                        set_label: "Password"
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+            },
+        },
+
+        #[wrap(Some)]
+        set_end_widget = &gtk::CenterBox{
+            set_margin_all: 50,
+            set_orientation: gtk::Orientation::Vertical,
+
+            #[wrap(Some)]
+            set_end_widget = &gtk::Button{
+                set_label: "OK",
+            },
+        },
+    });
 
     fn init(
         _init: Self::Init,
