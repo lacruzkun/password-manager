@@ -1,6 +1,9 @@
+use std::convert::identity;
+
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+#[derive(Debug)]
 enum Screens {
     Main,
     Signup,
@@ -86,10 +89,15 @@ impl SimpleComponent for MainScreen {
 
 struct SignupScreen;
 
+#[derive(Debug)]
+enum SignLogMsg {
+    Ok,
+}
+
 #[relm4::component]
 impl SimpleComponent for SignupScreen {
     type Init = ();
-    type Input = ();
+    type Input = SignLogMsg;
     type Output = AppMsg;
 
     view!(gtk::CenterBox {
@@ -145,6 +153,7 @@ impl SimpleComponent for SignupScreen {
             #[wrap(Some)]
             set_end_widget = &gtk::Button{
                 set_label: "OK",
+                connect_clicked => SignLogMsg::Ok,
             },
         },
     });
@@ -158,6 +167,14 @@ impl SimpleComponent for SignupScreen {
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
+
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+        match message {
+            SignLogMsg::Ok => {
+                let _ = sender.output(AppMsg::Modal(Screens::Signup));
+            }
+        }
+    }
 }
 
 struct LoginScreen;
@@ -165,7 +182,7 @@ struct LoginScreen;
 #[relm4::component]
 impl SimpleComponent for LoginScreen {
     type Init = ();
-    type Input = ();
+    type Input = SignLogMsg;
     type Output = AppMsg;
 
     view!(gtk::CenterBox {
@@ -210,6 +227,7 @@ impl SimpleComponent for LoginScreen {
             #[wrap(Some)]
             set_end_widget = &gtk::Button{
                 set_label: "OK",
+                connect_clicked => SignLogMsg::Ok,
             },
         },
     });
@@ -223,10 +241,75 @@ impl SimpleComponent for LoginScreen {
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
+
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+        match message {
+            SignLogMsg::Ok => {
+                let _ = sender.output(AppMsg::Modal(Screens::Login));
+            }
+        }
+    }
+}
+
+struct WelcomeDialog {
+    hidden: bool,
+}
+
+#[derive(Debug)]
+enum WelMsg {
+    Show,
+    Close,
+}
+
+#[relm4::component]
+impl SimpleComponent for WelcomeDialog {
+    type Init = gtk::Window;
+    type Output = AppMsg;
+    type Input = WelMsg;
+
+    view!(
+        dialog = gtk::MessageDialog {
+        set_transient_for: Some(&init),
+        set_modal: true,
+        set_text: Some("Welcome Back"),
+
+        add_button: ("Ok", gtk::ResponseType::Accept),
+
+        #[watch]
+        set_visible: !model.hidden,
+
+        connect_response[sender] => move |_, _| {
+            sender.input(WelMsg::Close)
+        }
+    });
+
+    fn init(
+        init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = WelcomeDialog { hidden: true };
+
+        let widgets = view_output!();
+        ComponentParts { widgets, model }
+    }
+
+    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+        match message {
+            WelMsg::Close => {
+                self.hidden = true;
+            }
+
+            WelMsg::Show => {
+                self.hidden = false;
+            }
+        }
+    }
 }
 
 struct App {
     screen: Screens,
+    welcome: Controller<WelcomeDialog>,
     main: Controller<MainScreen>,
     signup: Controller<SignupScreen>,
     login: Controller<LoginScreen>,
@@ -236,6 +319,7 @@ struct App {
 enum AppMsg {
     Signup,
     Login,
+    Modal(Screens),
     Quit,
 }
 
@@ -288,11 +372,16 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), |msg| msg);
 
+        let welcome = WelcomeDialog::builder()
+            .launch(root.clone().upcast())
+            .forward(sender.input_sender(), identity);
+
         let model = App {
             screen: Screens::Main,
             main: main,
             login: login,
             signup: signup,
+            welcome: welcome,
         };
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -309,6 +398,16 @@ impl SimpleComponent for App {
             }
 
             AppMsg::Quit => {}
+
+            AppMsg::Modal(screen) => match screen {
+                Screens::Login => {
+                    self.welcome.emit(WelMsg::Show);
+                }
+                Screens::Signup => {
+                    self.screen = Screens::AccountCreated;
+                }
+                _ => (),
+            },
         }
     }
 }
