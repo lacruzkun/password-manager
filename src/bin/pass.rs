@@ -1,4 +1,8 @@
 use std::convert::identity;
+use std::error::Error;
+use std::fs::{File, OpenOptions};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::{self, BufRead, BufReader, Write};
 
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -86,7 +90,11 @@ impl SimpleComponent for MainScreen {
     }
 }
 
-struct SignupScreen;
+struct SignupScreen {
+    username: gtk::EntryBuffer,
+    password: gtk::PasswordEntry,
+    password2: gtk::PasswordEntry,
+}
 
 #[derive(Debug)]
 enum SignLogMsg {
@@ -116,7 +124,7 @@ impl SimpleComponent for SignupScreen {
                     },
 
                     gtk::Entry {
-
+                        set_buffer: &model.username,
                     },
                 },
 
@@ -126,9 +134,7 @@ impl SimpleComponent for SignupScreen {
                         set_label: "Password"
                     },
 
-                    gtk::Entry {
-
-                    },
+                    append: &model.password,
                 },
 
                 gtk::Box{
@@ -137,9 +143,7 @@ impl SimpleComponent for SignupScreen {
                         set_label: "Confirm password"
                     },
 
-                    gtk::Entry {
-
-                    },
+                    append: &model.password2,
                 },
             },
         },
@@ -162,7 +166,12 @@ impl SimpleComponent for SignupScreen {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = SignupScreen;
+        let model = SignupScreen {
+            username: gtk::EntryBuffer::default(),
+            password: gtk::PasswordEntry::new(),
+            password2: gtk::PasswordEntry::new(),
+        };
+
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
@@ -170,7 +179,10 @@ impl SimpleComponent for SignupScreen {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             SignLogMsg::Ok => {
-                let _ = sender.output(AppMsg::Modal(Screens::Signup));
+                let _ = sender.output(AppMsg::Modal(Screens::Signup, None));
+                println!("username: {}", self.username.text());
+                println!("password: {}", self.password.text());
+                println!("password2: {}", self.password2.text());
             }
         }
     }
@@ -248,9 +260,17 @@ impl SimpleComponent for LoginScreen {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             SignLogMsg::Ok => {
-                let _ = sender.output(AppMsg::Modal(Screens::Login));
-                println!("username: {}", self.username.text());
-                println!("password: {}", self.password.text());
+                match login(
+                    &self.username.text().as_str().to_string(),
+                    &mut self.password.text().as_str().to_string(),
+                ) {
+                    Ok(_) => {
+                        let _ = sender.output(AppMsg::Modal(Screens::Login, None));
+                    }
+                    Err(e) => {
+                        let _ = sender.output(AppMsg::Modal(Screens::Login, Some(e.to_string())));
+                    }
+                }
             }
         }
     }
@@ -259,11 +279,12 @@ impl SimpleComponent for LoginScreen {
 struct WelcomeDialog {
     hidden: bool,
     screen: Screens,
+    error: Option<String>,
 }
 
 #[derive(Debug)]
 enum WelMsg {
-    Show(Screens),
+    Show(Screens, Option<String>),
     Close,
 }
 
@@ -278,8 +299,12 @@ impl SimpleComponent for WelcomeDialog {
         set_transient_for: Some(&init),
         set_modal: true,
         #[watch]
-        set_text: if model.screen == Screens::Login {
-            Some("Login Screen")}
+        set_text: if let Some(e) = &model.error {
+            Some(e)
+        }
+        else if model.screen == Screens::Login {
+            Some("Login Screen")
+        }
         else{
             Some("Other Screen")
         },
@@ -302,6 +327,7 @@ impl SimpleComponent for WelcomeDialog {
         let model = WelcomeDialog {
             hidden: true,
             screen: Screens::Login,
+            error: None,
         };
 
         let widgets = view_output!();
@@ -312,15 +338,17 @@ impl SimpleComponent for WelcomeDialog {
         match message {
             WelMsg::Close => {
                 self.hidden = true;
-                if self.screen == Screens::Login {
+                if let Some(e) = self.error.clone() {
+                } else if self.screen == Screens::Login {
                     let _ = sender.output(AppMsg::User);
                 } else if self.screen == Screens::Signup {
                     let _ = sender.output(AppMsg::Main);
                 }
             }
 
-            WelMsg::Show(screen) => {
+            WelMsg::Show(screen, error) => {
                 self.screen = screen;
+                self.error = error;
                 self.hidden = false;
             }
         }
@@ -336,11 +364,18 @@ struct App {
 }
 
 #[derive(Debug)]
+enum Modal {
+    Login,
+    Signup,
+    Error(String),
+}
+
+#[derive(Debug)]
 enum AppMsg {
     Signup,
     Login,
     Main,
-    Modal(Screens),
+    Modal(Screens, Option<String>),
     User,
     Quit,
 }
@@ -420,12 +455,12 @@ impl SimpleComponent for App {
 
             AppMsg::Quit => {}
 
-            AppMsg::Modal(screen) => match screen {
+            AppMsg::Modal(modal, error) => match modal {
                 Screens::Login => {
-                    self.welcome.emit(WelMsg::Show(Screens::Login));
+                    self.welcome.emit(WelMsg::Show(Screens::Login, error));
                 }
                 Screens::Signup => {
-                    self.welcome.emit(WelMsg::Show(Screens::Signup));
+                    self.welcome.emit(WelMsg::Show(Screens::Signup, error));
                 }
                 _ => (),
             },
@@ -444,4 +479,35 @@ impl SimpleComponent for App {
 fn main() {
     let app = RelmApp::new("password.org");
     app.run::<App>(());
+}
+
+fn login<'a>(username: &String, password: &mut String) -> Result<(String, String), Box<dyn Error>> {
+    let mut key = String::new();
+
+    get_symmetric_key(&mut key, password);
+    let mut password_hasher = DefaultHasher::new();
+    password.hash(&mut password_hasher);
+    *password = password_hasher.finish().to_string();
+
+    let database = "master.db";
+    let file = File::open(database)?;
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line = line?;
+        let u: Vec<_> = line.split(" ").collect();
+        if username == u[0] && password == u[1] {
+            return Ok((username.clone(), key));
+        }
+    }
+
+    Err("Can't find your account".into())
+}
+
+fn get_symmetric_key(key: &mut String, password: &String) {
+    let mut hash: u128 = 5381;
+    let password = password.clone().into_bytes().into_iter();
+    for i in password {
+        hash = hash.wrapping_mul(33).wrapping_add(i.into());
+    }
+    *key = hash.to_string();
 }
