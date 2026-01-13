@@ -2,7 +2,7 @@ use std::convert::identity;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write};
 
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -179,10 +179,17 @@ impl SimpleComponent for SignupScreen {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             SignLogMsg::Ok => {
-                let _ = sender.output(AppMsg::Modal(Screens::Signup, None));
-                println!("username: {}", self.username.text());
-                println!("password: {}", self.password.text());
-                println!("password2: {}", self.password2.text());
+                match signup(
+                    self.username.text().to_string(),
+                    &mut self.password.text().to_string(),
+                ) {
+                    Ok(_) => {
+                        let _ = sender.output(AppMsg::Modal(Screens::Signup, None));
+                    }
+                    Err(e) => {
+                        let _ = sender.output(AppMsg::Modal(Screens::Signup, Some(e.to_string())));
+                    }
+                };
             }
         }
     }
@@ -303,10 +310,10 @@ impl SimpleComponent for WelcomeDialog {
             Some(e)
         }
         else if model.screen == Screens::Login {
-            Some("Login Screen")
+            Some("Welcome Back")
         }
         else{
-            Some("Other Screen")
+            Some("Account Created")
         },
 
         add_button: ("Ok", gtk::ResponseType::Accept),
@@ -338,7 +345,7 @@ impl SimpleComponent for WelcomeDialog {
         match message {
             WelMsg::Close => {
                 self.hidden = true;
-                if let Some(e) = self.error.clone() {
+                if let Some(_e) = self.error.clone() {
                 } else if self.screen == Screens::Login {
                     let _ = sender.output(AppMsg::User);
                 } else if self.screen == Screens::Signup {
@@ -355,19 +362,126 @@ impl SimpleComponent for WelcomeDialog {
     }
 }
 
+struct UserSessionScreen;
+
+#[derive(Debug)]
+enum UserMsg {
+    Add,
+    Retrieve,
+}
+
+#[relm4::component]
+impl SimpleComponent for UserSessionScreen {
+    type Input = UserMsg;
+    type Output = AppMsg;
+    type Init = ();
+
+    view!(gtk::CenterBox {
+        #[wrap(Some)]
+        set_center_widget = &gtk::CenterBox {
+            set_orientation: gtk::Orientation::Vertical,
+
+            #[wrap(Some)]
+            set_center_widget = &gtk::Box{
+                set_spacing: 20,
+
+                gtk::Button {
+                    set_label: "Add Password",
+                    connect_clicked => UserMsg::Add,
+                },
+
+                gtk::Button {
+                    set_label: "Retrieve Password",
+                    connect_clicked => UserMsg::Retrieve,
+                },
+            },
+        },
+    });
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        _sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = UserSessionScreen;
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+        match message {
+            UserMsg::Add => {
+                let _ = sender.output(AppMsg::AddPass);
+            }
+
+            UserMsg::Retrieve => {
+                let _ = sender.output(AppMsg::RetrievePass);
+            }
+        }
+    }
+}
+
+struct AddScreen;
+
+#[relm4::component]
+impl SimpleComponent for AddScreen {
+    type Input = ();
+    type Output = AppMsg;
+    type Init = ();
+
+    view!(gtk::Label {
+        set_label: "Add Screen",
+    });
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        _sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = AddScreen;
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+}
+
+struct RetrieveScreen;
+
+#[relm4::component]
+impl SimpleComponent for RetrieveScreen {
+    type Input = ();
+    type Output = AppMsg;
+    type Init = ();
+
+    view!(gtk::Label {
+        set_label: "Add Screen",
+    });
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        _sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = RetrieveScreen;
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+}
+
 struct App {
     screen: Screens,
     welcome: Controller<WelcomeDialog>,
     main: Controller<MainScreen>,
     signup: Controller<SignupScreen>,
     login: Controller<LoginScreen>,
-}
-
-#[derive(Debug)]
-enum Modal {
-    Login,
-    Signup,
-    Error(String),
+    usersession: Controller<UserSessionScreen>,
+    add: Controller<AddScreen>,
+    retrieve: Controller<RetrieveScreen>,
 }
 
 #[derive(Debug)]
@@ -377,6 +491,8 @@ enum AppMsg {
     Main,
     Modal(Screens, Option<String>),
     User,
+    AddPass,
+    RetrievePass,
     Quit,
 }
 
@@ -395,6 +511,9 @@ impl SimpleComponent for App {
             add_named: (model.main.widget(), Some("Main")),
             add_named: (model.signup.widget(), Some("Signup")),
             add_named: (model.login.widget(), Some("Login")),
+            add_named: (model.usersession.widget(), Some("UserSession")),
+            add_named: (model.add.widget(), Some("AddPassword")),
+            add_named: (model.retrieve.widget(), Some("RetrievePassword")),
 
             #[watch]
             set_visible_child_name: match model.screen {
@@ -432,12 +551,27 @@ impl SimpleComponent for App {
             .launch(root.clone().upcast())
             .forward(sender.input_sender(), identity);
 
+        let usersession = UserSessionScreen::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| msg);
+
+        let add = AddScreen::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| msg);
+
+        let retrieve = RetrieveScreen::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| msg);
+
         let model = App {
             screen: Screens::Main,
             main: main,
             login: login,
             signup: signup,
             welcome: welcome,
+            usersession: usersession,
+            add: add,
+            retrieve: retrieve,
         };
         let widgets = view_output!();
         ComponentParts { model, widgets }
@@ -471,6 +605,14 @@ impl SimpleComponent for App {
 
             AppMsg::Main => {
                 self.screen = Screens::Main;
+            }
+
+            AppMsg::AddPass => {
+                self.screen = Screens::AddPassword;
+            }
+
+            AppMsg::RetrievePass => {
+                self.screen = Screens::RetrievePassword;
             }
         }
     }
@@ -510,4 +652,26 @@ fn get_symmetric_key(key: &mut String, password: &String) {
         hash = hash.wrapping_mul(33).wrapping_add(i.into());
     }
     *key = hash.to_string();
+}
+
+fn signup(username: String, password: &mut String) -> Result<String, Box<dyn Error>> {
+    let mut key = String::new();
+
+    let mut password_hasher = DefaultHasher::new();
+
+    get_symmetric_key(&mut key, &password);
+    password.hash(&mut password_hasher);
+    *password = password_hasher.finish().to_string();
+    println!("\nMaster account {username} created");
+
+    let user = username + " " + password.as_str() + "\n";
+
+    let database = "master.db";
+
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(database)?;
+    file.write_all(user.as_bytes())?;
+    Ok(key)
 }
