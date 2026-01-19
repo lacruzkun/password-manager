@@ -431,8 +431,52 @@ impl SimpleComponent for AddScreen {
     type Output = AppMsg;
     type Init = ();
 
-    view!(gtk::Label {
-        set_label: "Add Screen",
+    view!(
+        gtk::CenterBox{
+
+            #[wrap(Some)]
+            set_center_widget = &gtk::CenterBox {
+                set_orientation: gtk::Orientation::Vertical,
+
+                #[wrap(Some)]
+                set_center_widget = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 20,
+
+                    gtk::Box{
+                        set_orientation: gtk::Orientation::Vertical,
+                        gtk::Label{
+                            set_label: "Account",
+                        },
+
+                        gtk::Entry {
+
+                        },
+                    },
+
+                    gtk::Box{
+                        set_orientation: gtk::Orientation::Vertical,
+                        gtk::Label{
+                            set_label: "Password",
+                        },
+
+                        gtk::Entry {
+
+                        },
+                    },
+                },
+            },
+
+            #[wrap(Some)]
+            set_end_widget = &gtk::CenterBox{
+                set_orientation: gtk::Orientation::Vertical,
+                set_margin_all: 20,
+
+                #[wrap(Some)]
+                set_end_widget = &gtk::Button{
+                    set_label: "OK",
+                },
+            },
     });
 
     fn init(
@@ -456,8 +500,37 @@ impl SimpleComponent for RetrieveScreen {
     type Output = AppMsg;
     type Init = ();
 
-    view!(gtk::Label {
-        set_label: "Add Screen",
+    view!(
+        gtk::CenterBox{
+
+            #[wrap(Some)]
+            set_center_widget = &gtk::CenterBox {
+                set_orientation: gtk::Orientation::Vertical,
+
+                #[wrap(Some)]
+                set_center_widget = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+
+                    gtk::Label{
+                        set_label: "Account to be retrieved",
+                    },
+
+                    gtk::Entry {
+
+                    },
+                },
+            },
+
+            #[wrap(Some)]
+            set_end_widget = &gtk::CenterBox{
+                set_orientation: gtk::Orientation::Vertical,
+                set_margin_all: 20,
+
+                #[wrap(Some)]
+                set_end_widget = &gtk::Button{
+                    set_label: "OK",
+                },
+            },
     });
 
     fn init(
